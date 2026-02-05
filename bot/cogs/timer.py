@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -6,6 +7,8 @@ from typing import Optional
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+log = logging.getLogger(__name__)
 
 from bot.db import Database
 from bot.utils.checks import can_disconnect
@@ -124,7 +127,8 @@ class Timer(commands.Cog):
         # Start timer task
         task = asyncio.create_task(self._run_timer(timer_id, seconds))
         self.tasks[timer_id] = task
-        
+        log.info(f"Timer {timer_id} started for {target} ({seconds}s)")
+
         # Format duration for display
         mins, secs = divmod(seconds, 60)
         hours, mins = divmod(mins, 60)
@@ -234,6 +238,7 @@ class Timer(commands.Cog):
     async def _execute_disconnect(self, timer: dict):
         """Disconnect the user from voice."""
         timer_id = str(timer["_id"])
+        log.info(f"Executing disconnect for timer {timer_id}")
         guild = self.bot.get_guild(timer["guild_id"])
         
         if not guild:
