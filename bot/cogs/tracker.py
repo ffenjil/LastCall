@@ -104,7 +104,7 @@ class Tracker(commands.Cog):
         
         stats_embed.set_thumbnail(url=target.display_avatar.url)
         
-        stats_stats_embed.add_field(
+        stats_embed.add_field(
             name="Total Time",
             value=format_duration(stats["total_time"]),
             inline=True
