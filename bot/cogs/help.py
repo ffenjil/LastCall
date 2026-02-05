@@ -150,6 +150,8 @@ class Help(commands.Cog):
     @commands.hybrid_command(name="help", description="Show bot help menu")
     async def help(self, ctx: commands.Context):
         """Show the help menu with destination options."""
+        await ctx.defer()
+        
         if ctx.guild:
             from bot.db import Database
             prefix = await Database.get_prefix(ctx.guild.id)

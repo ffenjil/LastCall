@@ -13,8 +13,11 @@ class Config(commands.Cog):
     @commands.hybrid_command(name="prefix", description="Set the bot prefix for this server")
     @app_commands.describe(new_prefix="New prefix (1-5 characters)")
     @commands.has_permissions(manage_guild=True)
+    @commands.guild_only()
     async def prefix(self, ctx: commands.Context, new_prefix: str):
         """Set a custom command prefix for this server."""
+        await ctx.defer()
+        
         # Validate prefix
         if len(new_prefix) > 5:
             await ctx.send(embed=embed("Prefix must be 5 characters or less."))

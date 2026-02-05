@@ -81,6 +81,8 @@ class Timer(commands.Cog):
         member: Optional[discord.Member] = None
     ):
         """Set a disconnect timer for a user in voice chat."""
+        await ctx.defer()
+        
         if not ctx.guild or not isinstance(ctx.author, discord.Member):
             return
         
@@ -147,6 +149,8 @@ class Timer(commands.Cog):
     @commands.guild_only()
     async def cancel(self, ctx: commands.Context, member: Optional[discord.Member] = None):
         """Cancel an active disconnect timer."""
+        await ctx.defer()
+        
         if not ctx.guild or not isinstance(ctx.author, discord.Member):
             return
         
@@ -184,6 +188,8 @@ class Timer(commands.Cog):
     @commands.guild_only()
     async def timers(self, ctx: commands.Context):
         """List all active disconnect timers in this server."""
+        await ctx.defer()
+        
         if not ctx.guild:
             return
         

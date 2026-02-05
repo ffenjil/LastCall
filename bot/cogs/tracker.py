@@ -84,6 +84,8 @@ class Tracker(commands.Cog):
     @commands.guild_only()
     async def stats(self, ctx: commands.Context, member: Optional[discord.Member] = None):
         """View all-time voice channel statistics."""
+        await ctx.defer()
+        
         if not ctx.guild or not isinstance(ctx.author, discord.Member):
             return
         
@@ -142,6 +144,8 @@ class Tracker(commands.Cog):
     @commands.guild_only()
     async def top(self, ctx: commands.Context, limit: int = 10):
         """Show the voice channel time leaderboard."""
+        await ctx.defer()
+        
         if not ctx.guild:
             return
         
