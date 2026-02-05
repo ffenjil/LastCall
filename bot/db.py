@@ -206,9 +206,12 @@ class Database:
         if not session:
             return None
         
-        # Calculate duration
+        # Calculate duration - handle timezone-naive datetimes from MongoDB
         now = datetime.now(timezone.utc)
-        duration = int((now - session["joined_at"]).total_seconds())
+        joined_at = session["joined_at"]
+        if joined_at.tzinfo is None:
+            joined_at = joined_at.replace(tzinfo=timezone.utc)
+        duration = int((now - joined_at).total_seconds())
         
         # Save to sessions history
         await cls.sessions.insert_one({  # type: ignore

@@ -5,6 +5,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.db import Database
+from bot.utils.embed import make as embed
 
 
 def format_duration(seconds: int) -> str:
@@ -91,25 +92,25 @@ class Tracker(commands.Cog):
         # Check permissions for viewing others' stats
         if target != ctx.author:
             if not ctx.author.guild_permissions.manage_guild:
-                await ctx.send("You need `Manage Server` permission to view others' stats.")
+                await ctx.send(embed=embed("You need `Manage Server` permission to view others' stats."))
                 return
         
         stats = await Database.get_user_stats(ctx.guild.id, target.id)
         
-        embed = discord.Embed(
+        stats_embed = discord.Embed(
             title=f"Voice Stats: {target.display_name}",
-            color=0x2b2d31
+            color=0x202225
         )
         
-        embed.set_thumbnail(url=target.display_avatar.url)
+        stats_embed.set_thumbnail(url=target.display_avatar.url)
         
-        embed.add_field(
+        stats_stats_embed.add_field(
             name="Total Time",
             value=format_duration(stats["total_time"]),
             inline=True
         )
         
-        embed.add_field(
+        stats_embed.add_field(
             name="Sessions",
             value=str(stats["session_count"]),
             inline=True
@@ -119,7 +120,7 @@ class Tracker(commands.Cog):
             channels_str = ", ".join(stats["channels"][:5])
             if len(stats["channels"]) > 5:
                 channels_str += f" +{len(stats['channels']) - 5} more"
-            embed.add_field(
+            stats_embed.add_field(
                 name="Channels",
                 value=channels_str,
                 inline=False
@@ -128,13 +129,13 @@ class Tracker(commands.Cog):
         # Check if currently in voice
         session = await Database.get_active_session(ctx.guild.id, target.id)
         if session:
-            embed.add_field(
+            stats_embed.add_field(
                 name="Currently In",
                 value=session["channel_name"],
                 inline=True
             )
         
-        await ctx.send(embed=embed)
+        await ctx.send(embed=stats_embed)
     
     @commands.hybrid_command(name="top", description="Voice channel leaderboard")
     @app_commands.describe(limit="Number of users to show (default 10)")
@@ -149,13 +150,13 @@ class Tracker(commands.Cog):
         leaderboard = await Database.get_guild_leaderboard(ctx.guild.id, limit)
         
         if not leaderboard:
-            await ctx.send("No voice activity recorded yet.")
+            await ctx.send(embed=embed("No voice activity recorded yet."))
             return
         
-        embed = discord.Embed(
+        top_embed = discord.Embed(
             title="Voice Channel Leaderboard",
             description="All-time voice activity rankings",
-            color=0x2b2d31
+            color=0x202225
         )
         
         medals = ["1.", "2.", "3."]
@@ -169,9 +170,9 @@ class Tracker(commands.Cog):
             medal = medals[i] if i < 3 else f"{i+1}."
             lines.append(f"**{medal}** {name} - {time_str}")
         
-        embed.description = "\n".join(lines)
+        top_embed.description = "\n".join(lines)
         
-        await ctx.send(embed=embed)
+        await ctx.send(embed=top_embed)
 
 
 async def setup(bot: commands.Bot):

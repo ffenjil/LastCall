@@ -108,10 +108,10 @@ class Help(commands.Cog):
     
     def _build_help_embed(self, prefix: str) -> discord.Embed:
         """Build the help embed."""
-        embed = discord.Embed(
+        help_embed = discord.Embed(
             title="LastCall Bot",
             description="Voice channel disconnect timer and activity tracker.",
-            color=0x2b2d31
+            color=0x202225
         )
         
         commands_text = (
@@ -123,7 +123,7 @@ class Help(commands.Cog):
             f"`{prefix}prefix <new>` - Change bot prefix\n"
             f"`{prefix}help` - Show this menu"
         )
-        embed.add_field(name="Commands", value=commands_text, inline=False)
+        help_embed.add_field(name="Commands", value=commands_text, inline=False)
         
         examples_text = (
             f"`{prefix}dc 30m` - Disconnect yourself in 30 minutes\n"
@@ -131,21 +131,21 @@ class Help(commands.Cog):
             f"`{prefix}dc 90` - Disconnect yourself in 90 seconds\n"
             f"`{prefix}cancel` - Cancel your own timer"
         )
-        embed.add_field(name="Examples", value=examples_text, inline=False)
+        help_embed.add_field(name="Examples", value=examples_text, inline=False)
         
         time_text = "`30s` (seconds) | `5m` (minutes) | `1h` (hours) | `90` (seconds)"
-        embed.add_field(name="Time Formats", value=time_text, inline=False)
+        help_embed.add_field(name="Time Formats", value=time_text, inline=False)
         
         perms_text = (
             "Anyone can set timers on themselves\n"
             "`Move Members` required to timer others\n"
             "`Manage Server` required to change prefix or view others' stats"
         )
-        embed.add_field(name="Permissions", value=perms_text, inline=False)
+        help_embed.add_field(name="Permissions", value=perms_text, inline=False)
         
-        embed.set_footer(text="LastCall v1.0.0")
+        help_embed.set_footer(text="LastCall v1.0.0")
         
-        return embed
+        return help_embed
     
     @commands.hybrid_command(name="help", description="Show bot help menu")
     async def help(self, ctx: commands.Context):
@@ -156,21 +156,22 @@ class Help(commands.Cog):
         else:
             prefix = "!"
         
-        embed = self._build_help_embed(prefix)
+        help_embed = self._build_help_embed(prefix)
         
         if not ctx.guild:
-            await ctx.send(embed=embed)
+            await ctx.send(embed=help_embed)
             return
         
         if not isinstance(ctx.author, discord.Member):
-            await ctx.send(embed=embed)
+            await ctx.send(embed=help_embed)
             return
         
-        view = HelpView(ctx.author, embed)
-        view.message = await ctx.send(
-            "Where would you like to see the help menu?",
-            view=view
+        view = HelpView(ctx.author, help_embed)
+        prompt_embed = discord.Embed(
+            description="Where would you like to see the help menu?",
+            color=0x202225
         )
+        view.message = await ctx.send(embed=prompt_embed, view=view)
 
 
 async def setup(bot: commands.Bot):

@@ -1,10 +1,20 @@
 import discord
+from typing import Optional
 
-# Discord dark mode embed color
-EMBED_COLOR = 0x2b2d31
+# Dark embed color #202225
+EMBED_COLOR = 0x202225
 
 
-def success(description: str, title: str = None) -> discord.Embed:
+def make(description: str, title: Optional[str] = None) -> discord.Embed:
+    """Create a standard embed."""
+    return discord.Embed(
+        title=title,
+        description=description,
+        color=EMBED_COLOR
+    )
+
+
+def success(description: str, title: Optional[str] = None) -> discord.Embed:
     """Success embed."""
     return discord.Embed(
         title=title,
@@ -13,7 +23,7 @@ def success(description: str, title: str = None) -> discord.Embed:
     )
 
 
-def error(description: str, title: str = None) -> discord.Embed:
+def error(description: str, title: Optional[str] = None) -> discord.Embed:
     """Error embed."""
     return discord.Embed(
         title=title,
@@ -22,7 +32,7 @@ def error(description: str, title: str = None) -> discord.Embed:
     )
 
 
-def info(description: str, title: str = None) -> discord.Embed:
+def info(description: str, title: Optional[str] = None) -> discord.Embed:
     """Info embed."""
     return discord.Embed(
         title=title,

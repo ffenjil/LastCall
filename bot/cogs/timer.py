@@ -12,6 +12,7 @@ log = logging.getLogger(__name__)
 
 from bot.db import Database
 from bot.utils.checks import can_disconnect
+from bot.utils.embed import make as embed
 
 
 def parse_duration(duration_str: str) -> Optional[int]:
@@ -89,28 +90,28 @@ class Timer(commands.Cog):
         # Check permissions
         if target != ctx.author:
             if not can_disconnect(ctx.author):
-                await ctx.send("You need `Move Members` permission to set timers for others.")
+                await ctx.send(embed=embed("You need `Move Members` permission to set timers for others."))
                 return
         
         # Check if target is in voice
         if not target.voice or not target.voice.channel:
-            await ctx.send(f"{target.mention} is not in a voice channel.")
+            await ctx.send(embed=embed(f"{target.mention} is not in a voice channel."))
             return
         
         # Parse duration
         seconds = parse_duration(duration)
         if not seconds or seconds < 10:
-            await ctx.send("Invalid duration. Use formats like `30s`, `5m`, `1h` (min 10s).")
+            await ctx.send(embed=embed("Invalid duration. Use formats like `30s`, `5m`, `1h` (min 10s)."))
             return
         
         if seconds > 86400:  # 24 hours max
-            await ctx.send("Maximum duration is 24 hours.")
+            await ctx.send(embed=embed("Maximum duration is 24 hours."))
             return
         
         # Check for existing timer
         existing = await Database.get_user_timer(ctx.guild.id, target.id)
         if existing:
-            await ctx.send(f"{target.mention} already has an active timer. Use `cancel` first.")
+            await ctx.send(embed=embed(f"{target.mention} already has an active timer. Use `cancel` first."))
             return
         
         # Create timer
@@ -139,7 +140,7 @@ class Timer(commands.Cog):
         else:
             time_str = f"{secs}s"
         
-        await ctx.send(f"{target.mention} will be disconnected in **{time_str}**.")
+        await ctx.send(embed=embed(f"{target.mention} will be disconnected in **{time_str}**."))
     
     @commands.hybrid_command(name="cancel", description="Cancel a disconnect timer")
     @app_commands.describe(member="User whose timer to cancel (leave empty for yourself)")
@@ -154,20 +155,20 @@ class Timer(commands.Cog):
         # Check permissions for cancelling others' timers
         if target != ctx.author:
             if not can_disconnect(ctx.author):
-                await ctx.send("You need `Move Members` permission to cancel others' timers.")
+                await ctx.send(embed=embed("You need `Move Members` permission to cancel others' timers."))
                 return
         
         # Find timer
         timer = await Database.get_user_timer(ctx.guild.id, target.id)
         if not timer:
-            await ctx.send(f"No active timer for {target.mention}.")
+            await ctx.send(embed=embed(f"No active timer for {target.mention}."))
             return
         
         # Check if author set the timer (can cancel own timers)
         timer_id = str(timer["_id"])
         if timer["set_by"] != ctx.author.id and target != ctx.author:
             if not can_disconnect(ctx.author):
-                await ctx.send("You can only cancel timers you set.")
+                await ctx.send(embed=embed("You can only cancel timers you set."))
                 return
         
         # Cancel task
@@ -177,7 +178,7 @@ class Timer(commands.Cog):
         
         # Update database
         await Database.cancel_timer(timer_id)
-        await ctx.send(f"Timer cancelled for {target.mention}.")
+        await ctx.send(embed=embed(f"Timer cancelled for {target.mention}."))
     
     @commands.hybrid_command(name="timers", description="List active timers")
     @commands.guild_only()
@@ -189,12 +190,12 @@ class Timer(commands.Cog):
         timers = await Database.get_guild_timers(ctx.guild.id)
         
         if not timers:
-            await ctx.send("No active timers.")
+            await ctx.send(embed=embed("No active timers."))
             return
         
-        embed = discord.Embed(
+        timers_embed = discord.Embed(
             title="Active Timers",
-            color=0x2b2d31
+            color=0x202225
         )
         
         now = datetime.now(timezone.utc)
@@ -214,13 +215,13 @@ class Timer(commands.Cog):
                     time_str = f"{secs}s"
                 
                 name = user.display_name if user else f"User {timer['user_id']}"
-                embed.add_field(
+                timers_embed.add_field(
                     name=name,
                     value=f"{time_str} remaining",
                     inline=True
                 )
         
-        await ctx.send(embed=embed)
+        await ctx.send(embed=timers_embed)
     
     async def _run_timer(self, timer_id: str, seconds: float):
         """Run a timer and disconnect user when it expires."""
