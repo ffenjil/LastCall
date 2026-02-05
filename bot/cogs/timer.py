@@ -90,8 +90,8 @@ class Timer(commands.Cog):
     
     @commands.hybrid_command(name="dc", description="Set a disconnect timer")
     @app_commands.describe(
-        member="User to disconnect (leave empty for yourself)",
-        duration="Duration (e.g., 5m, 1h, 30s, or seconds)"
+        duration="Duration (e.g., 5m, 1h, 30s)",
+        member="User to disconnect (leave empty for yourself)"
     )
     @commands.guild_only()
     async def dc(
@@ -100,14 +100,23 @@ class Timer(commands.Cog):
         duration: str,
         member: Optional[discord.Member] = None
     ):
-        """Set a disconnect timer for a user in voice chat."""
+        """Set a disconnect timer for a user in voice chat.
+        
+        Usage: #dc <duration> [@user] OR #dc @user <duration>
+        """
         await ctx.defer()
         
         if not ctx.guild or not isinstance(ctx.author, discord.Member):
             return
         
-        # Default to self
         target = member or ctx.author
+        duration_str = duration
+        
+        # Check if duration looks like a mention (user put @user first)
+        if duration.startswith("<@") and member is None:
+            # User did "#dc @user 30s" but we parsed @user as duration
+            await ctx.send(embed=embed(f"Usage: `#dc <duration> [@user]`\nExample: `#dc 30s @user`"))
+            return
         
         # Check permissions
         if target != ctx.author:
@@ -121,7 +130,7 @@ class Timer(commands.Cog):
             return
         
         # Parse duration
-        seconds = parse_duration(duration)
+        seconds = parse_duration(duration_str)
         if not seconds or seconds < 10:
             await ctx.send(embed=embed("Invalid duration. Use formats like `30s`, `5m`, `1h` (min 10s)."))
             return
