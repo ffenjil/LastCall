@@ -242,16 +242,19 @@ class Timer(commands.Cog):
         guild = self.bot.get_guild(timer["guild_id"])
         
         if not guild:
+            log.warning(f"Timer {timer_id}: Guild not found")
             await Database.complete_timer(timer_id, "guild_not_found")
             return
         
         member = guild.get_member(timer["user_id"])
         
         if not member:
+            log.warning(f"Timer {timer_id}: Member not found")
             await Database.complete_timer(timer_id, "member_not_found")
             return
         
         if not member.voice:
+            log.warning(f"Timer {timer_id}: Member not in voice")
             await Database.complete_timer(timer_id, "not_in_voice")
             return
         
@@ -261,10 +264,13 @@ class Timer(commands.Cog):
             
             # Disconnect user
             await member.move_to(None, reason="LastCall: Timer expired")
+            log.info(f"Timer {timer_id}: Disconnected {member}")
             await Database.complete_timer(timer_id, "disconnected")
         except discord.Forbidden:
+            log.error(f"Timer {timer_id}: No permission to disconnect")
             await Database.complete_timer(timer_id, "no_permission")
         except Exception as e:
+            log.error(f"Timer {timer_id}: Error - {e}")
             await Database.complete_timer(timer_id, f"error: {e}")
     
     @commands.Cog.listener()
