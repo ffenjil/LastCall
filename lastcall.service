@@ -1,0 +1,17 @@
+[Unit]
+Description=LastCall Discord Bot
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/LastCall
+ExecStart=/root/LastCall/.venv/bin/python -u main.py
+Restart=always
+RestartSec=10
+EnvironmentFile=/root/LastCall/.env
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
