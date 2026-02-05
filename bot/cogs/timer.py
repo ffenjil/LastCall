@@ -16,22 +16,42 @@ from bot.utils.embed import make as embed
 
 
 def parse_duration(duration_str: str) -> Optional[int]:
-    """Parse duration string to seconds (e.g., '5m', '1h', '30s', '90')."""
+    """Parse duration string to seconds.
+    
+    Supported formats:
+    - Pure number: 90 (seconds)
+    - Short: 30s, 5m, 1h
+    - Full: 30sec, 30secs, 30second, 30seconds
+    - Full: 5min, 5mins, 5minute, 5minutes
+    - Full: 1hr, 1hrs, 1hour, 1hours
+    """
     duration_str = duration_str.strip().lower()
     
     # Pure number = seconds
     if duration_str.isdigit():
         return int(duration_str)
     
-    # Match patterns like 5m, 1h, 30s
-    match = re.match(r"^(\d+)([smh])$", duration_str)
+    # Match number + unit
+    match = re.match(r"^(\d+)\s*([a-z]+)$", duration_str)
     if not match:
         return None
     
     value, unit = int(match.group(1)), match.group(2)
     
-    multipliers = {"s": 1, "m": 60, "h": 3600}
-    return value * multipliers[unit]
+    # Map all variations to multiplier
+    unit_map = {
+        # Seconds
+        "s": 1, "sec": 1, "secs": 1, "second": 1, "seconds": 1,
+        # Minutes
+        "m": 60, "min": 60, "mins": 60, "minute": 60, "minutes": 60, "minut": 60,
+        # Hours
+        "h": 3600, "hr": 3600, "hrs": 3600, "hour": 3600, "hours": 3600
+    }
+    
+    if unit not in unit_map:
+        return None
+    
+    return value * unit_map[unit]
 
 
 class Timer(commands.Cog):
