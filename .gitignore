@@ -31,3 +31,9 @@ Thumbs.db
 # Test files
 test_*.py
 run.py
+
+# Images
+*.png
+*.jpg
+*.jpeg
+*.gif
