@@ -1,8 +1,11 @@
 import discord
 from typing import Optional
 
-# Dark embed color #202225
+# Default dark embed color
 EMBED_COLOR = 0x202225
+SUCCESS_COLOR = 0x2ECC71
+ERROR_COLOR = 0xE74C3C
+INFO_COLOR = 0x3498DB
 
 
 def make(description: str, title: Optional[str] = None) -> discord.Embed:
@@ -19,7 +22,7 @@ def success(description: str, title: Optional[str] = None) -> discord.Embed:
     return discord.Embed(
         title=title,
         description=description,
-        color=EMBED_COLOR
+        color=SUCCESS_COLOR
     )
 
 
@@ -28,7 +31,7 @@ def error(description: str, title: Optional[str] = None) -> discord.Embed:
     return discord.Embed(
         title=title,
         description=description,
-        color=EMBED_COLOR
+        color=ERROR_COLOR
     )
 
 
@@ -37,5 +40,5 @@ def info(description: str, title: Optional[str] = None) -> discord.Embed:
     return discord.Embed(
         title=title,
         description=description,
-        color=EMBED_COLOR
+        color=INFO_COLOR
     )

@@ -5,6 +5,7 @@ from typing import Optional, Any
 import motor.motor_asyncio
 from motor.motor_asyncio import AsyncIOMotorCollection
 from bson import ObjectId
+from bson.errors import InvalidId
 
 
 class Database:
@@ -61,6 +62,14 @@ class Database:
         """Ensure database is connected."""
         if cls.guilds is None or cls.timers is None or cls.sessions is None or cls.active is None:
             raise RuntimeError("Database not connected")
+
+    @staticmethod
+    def _parse_object_id(value: str) -> Optional[ObjectId]:
+        """Parse ObjectId safely and return None for invalid values."""
+        try:
+            return ObjectId(value)
+        except (InvalidId, TypeError):
+            return None
     
     # ============ Guild Settings ============
     
@@ -121,7 +130,10 @@ class Database:
     async def get_timer(cls, timer_id: str) -> Optional[dict]:
         """Get timer by ID."""
         cls._check_connection()
-        return await cls.timers.find_one({"_id": ObjectId(timer_id)})  # type: ignore
+        object_id = cls._parse_object_id(timer_id)
+        if object_id is None:
+            return None
+        return await cls.timers.find_one({"_id": object_id})  # type: ignore
     
     @classmethod
     async def get_user_timer(cls, guild_id: int, user_id: int) -> Optional[dict]:
@@ -154,8 +166,11 @@ class Database:
     async def cancel_timer(cls, timer_id: str) -> bool:
         """Cancel a timer."""
         cls._check_connection()
+        object_id = cls._parse_object_id(timer_id)
+        if object_id is None:
+            return False
         result = await cls.timers.update_one(  # type: ignore
-            {"_id": ObjectId(timer_id), "status": "active"},
+            {"_id": object_id, "status": "active"},
             {"$set": {"status": "cancelled"}}
         )
         return result.modified_count > 0
@@ -164,8 +179,11 @@ class Database:
     async def complete_timer(cls, timer_id: str, outcome: str):
         """Mark timer as completed."""
         cls._check_connection()
+        object_id = cls._parse_object_id(timer_id)
+        if object_id is None:
+            return
         await cls.timers.update_one(  # type: ignore
-            {"_id": ObjectId(timer_id)},
+            {"_id": object_id},
             {
                 "$set": {
                     "status": "completed",

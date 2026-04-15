@@ -197,12 +197,7 @@ class Timer(commands.Cog):
             await ctx.send(embed=embed(f"No active timer for {target.mention}."))
             return
         
-        # Check if author set the timer (can cancel own timers)
         timer_id = str(timer["_id"])
-        if timer["set_by"] != ctx.author.id and target != ctx.author:
-            if not can_disconnect(ctx.author):
-                await ctx.send(embed=embed("You can only cancel timers you set."))
-                return
         
         # Cancel task
         if timer_id in self.tasks:
