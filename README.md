@@ -1,6 +1,6 @@
 # LastCall
 
-Discord bot for voice channel disconnect timers and activity tracking.
+Open source Discord bot for voice channel timers and activity tracking, by Team RhythmoSync.
 
 ## Features
 

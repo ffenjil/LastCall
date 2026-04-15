@@ -37,3 +37,7 @@ run.py
 *.jpg
 *.jpeg
 *.gif
+
+# Archives
+*.tar
+*.zip
