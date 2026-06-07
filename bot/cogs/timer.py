@@ -71,7 +71,10 @@ class Timer(commands.Cog):
         
         for timer in timers:
             timer_id = str(timer["_id"])
-            remaining = (timer["expires_at"] - datetime.now(timezone.utc)).total_seconds()
+            expires_at = timer["expires_at"]
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            remaining = (expires_at - datetime.now(timezone.utc)).total_seconds()
             
             if remaining > 0:
                 task = asyncio.create_task(self._run_timer(timer_id, remaining))
@@ -173,6 +176,15 @@ class Timer(commands.Cog):
         
         await ctx.send(embed=embed(f"{target.mention} will be disconnected in **{time_str}**."))
     
+    @dc.error
+    async def dc_error(self, ctx: commands.Context, error):
+        if isinstance(error, commands.BadArgument):
+            content = ctx.message.content.split()
+            if len(content) > 1 and (content[1].startswith("<@") or content[1].isdigit()):
+                await ctx.send(embed=embed("Usage: `#dc <duration> [@user]`\nExample: `#dc 30s @user`"))
+                return
+            await ctx.send(embed=embed(f"Invalid argument: {error}"))
+    
     @commands.hybrid_command(name="cancel", description="Cancel a disconnect timer")
     @app_commands.describe(member="User whose timer to cancel (leave empty for yourself)")
     @commands.guild_only()
@@ -231,7 +243,10 @@ class Timer(commands.Cog):
         now = datetime.now(timezone.utc)
         for timer in timers:
             user = ctx.guild.get_member(timer["user_id"])
-            remaining = (timer["expires_at"] - now).total_seconds()
+            expires_at = timer["expires_at"]
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            remaining = (expires_at - now).total_seconds()
             
             if remaining > 0:
                 mins, secs = divmod(int(remaining), 60)
@@ -289,13 +304,17 @@ class Timer(commands.Cog):
             await Database.complete_timer(timer_id, "not_in_voice")
             return
         
+        user_id = member.id
+        self.bot.disconnecting_users.add(user_id)
+        
         try:
+            # Disconnect user first
+            await member.move_to(None, reason="LastCall: Timer expired")
+            log.info(f"Timer {timer_id}: Disconnected {member}")
+            
             # End voice session with bot_timer type
             await Database.end_session(guild.id, member.id, "bot_timer")
             
-            # Disconnect user
-            await member.move_to(None, reason="LastCall: Timer expired")
-            log.info(f"Timer {timer_id}: Disconnected {member}")
             await Database.complete_timer(timer_id, "disconnected")
         except discord.Forbidden:
             log.error(f"Timer {timer_id}: No permission to disconnect")
@@ -303,6 +322,8 @@ class Timer(commands.Cog):
         except Exception as e:
             log.error(f"Timer {timer_id}: Error - {e}")
             await Database.complete_timer(timer_id, f"error: {e}")
+        finally:
+            self.bot.disconnecting_users.discard(user_id)
     
     @commands.Cog.listener()
     async def on_voice_state_update(
@@ -312,6 +333,10 @@ class Timer(commands.Cog):
         after: discord.VoiceState
     ):
         """Cancel timer if user leaves voice manually."""
+        # Ignore if the user is being disconnected by the bot
+        if member.id in self.bot.disconnecting_users:
+            return
+            
         # User left voice channel
         if before.channel and not after.channel:
             timer = await Database.get_user_timer(member.guild.id, member.id)
