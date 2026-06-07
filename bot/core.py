@@ -29,6 +29,9 @@ class LastCall(commands.Bot):
             help_command=None,
             owner_ids=owner_ids if owner_ids else None
         )
+        
+        # Track user IDs currently being disconnected by the bot to prevent event race conditions
+        self.disconnecting_users: set[int] = set()
     
     async def _get_prefix(self, bot: commands.Bot, message: discord.Message) -> list[str]:
         """Get guild prefix or default."""
