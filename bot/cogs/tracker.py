@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Optional
 
 import discord
@@ -33,6 +34,47 @@ def format_duration(seconds: int) -> str:
 class Tracker(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._ready = False
+    
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """Reconcile active sessions on bot startup."""
+        if self._ready:
+            return
+        self._ready = True
+        await self.reconcile_sessions()
+        
+    async def reconcile_sessions(self):
+        """Reconcile active sessions in database with actual voice states on startup."""
+        print("Reconciling voice sessions...")
+        # 1. Get all tracked active sessions from DB
+        db_sessions = await Database.get_all_active_sessions()
+        db_active_map = {(s["guild_id"], s["user_id"]): s for s in db_sessions}
+        
+        # 2. Get all actual voice states from discord guilds
+        actual_active = set()
+        for guild in self.bot.guilds:
+            for voice_state in guild.voice_states.values():
+                member = guild.get_member(voice_state.user_id)
+                if member and not member.bot and voice_state.channel:
+                    actual_active.add((guild.id, member.id, voice_state.channel.id, voice_state.channel.name))
+        
+        # 3. For any session in DB that is NOT actually active, end it
+        actual_keys = {(g_id, u_id) for g_id, u_id, _, _ in actual_active}
+        ended_count = 0
+        for (guild_id, user_id), session in db_active_map.items():
+            if (guild_id, user_id) not in actual_keys:
+                await Database.end_session(guild_id, user_id, "offline_disconnect")
+                ended_count += 1
+                
+        # 4. For any session that is actually active but NOT in DB, start it
+        started_count = 0
+        for guild_id, user_id, channel_id, channel_name in actual_active:
+            if (guild_id, user_id) not in db_active_map:
+                await Database.start_session(guild_id, user_id, channel_id, channel_name)
+                started_count += 1
+                
+        print(f"Reconciliation complete: ended {ended_count} stale sessions, started {started_count} new sessions.")
     
     @commands.Cog.listener()
     async def on_voice_state_update(
@@ -44,6 +86,10 @@ class Tracker(commands.Cog):
         """Track voice channel join/leave/move events."""
         # Ignore bots
         if member.bot:
+            return
+        
+        # Ignore if the user is being disconnected by the bot
+        if member.id in self.bot.disconnecting_users:
             return
         
         # User joined a voice channel
@@ -98,6 +144,23 @@ class Tracker(commands.Cog):
                 return
         
         stats = await Database.get_user_stats(ctx.guild.id, target.id)
+        
+        # Check if currently in voice and dynamically add current session duration
+        session = await Database.get_active_session(ctx.guild.id, target.id)
+        if session:
+            now = datetime.now(timezone.utc)
+            joined_at = session["joined_at"]
+            if joined_at.tzinfo is None:
+                joined_at = joined_at.replace(tzinfo=timezone.utc)
+            current_duration = int((now - joined_at).total_seconds())
+            
+            stats["total_time"] = stats.get("total_time", 0) + current_duration
+            stats["session_count"] = stats.get("session_count", 0) + 1
+            if "channels" not in stats:
+                stats["channels"] = []
+            if session["channel_name"] not in stats["channels"]:
+                stats["channels"] = list(stats["channels"])
+                stats["channels"].append(session["channel_name"])
         
         stats_embed = discord.Embed(
             title=f"Voice Stats: {target.display_name}",
