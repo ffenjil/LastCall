@@ -44,6 +44,7 @@ class Database:
             raise RuntimeError("Database not connected")
         await cls.guilds.create_index("guild_id", unique=True)
         await cls.timers.create_index("guild_id")
+        await cls.timers.create_index("status")
         await cls.timers.create_index([("guild_id", 1), ("user_id", 1)])
         await cls.sessions.create_index("guild_id")
         await cls.sessions.create_index([("guild_id", 1), ("user_id", 1)])
@@ -253,6 +254,13 @@ class Database:
             "guild_id": guild_id,
             "user_id": user_id
         })
+    
+    @classmethod
+    async def get_all_active_sessions(cls) -> list[dict]:
+        """Get all active voice sessions."""
+        cls._check_connection()
+        cursor = cls.active.find({})  # type: ignore
+        return await cursor.to_list(length=10000)
     
     @classmethod
     async def get_user_stats(cls, guild_id: int, user_id: int) -> dict:
