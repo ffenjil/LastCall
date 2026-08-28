@@ -9,9 +9,6 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.db import Database
-
-if TYPE_CHECKING:
-    from bot.core import LastCall
 from bot.utils.checks import can_target
 from bot.utils.embed import make as embed
 from bot.utils.embed import error as embed_error
@@ -19,12 +16,23 @@ from bot.utils.embed import info as embed_info
 from bot.utils.embed import success as embed_success
 from bot.utils.time import aware, format_duration, parse_duration
 
+if TYPE_CHECKING:
+    from bot.core import LastCall
+
 log = logging.getLogger(__name__)
 
 MIN_DURATION = 10
 MAX_DURATION = 86400  # 24 hours
 EXTEND_SECONDS = 600  # what the warning button grants
 MAX_TIMER_FIELDS = 25  # Discord embed field / readable line cap
+
+# Every message this cog sends is a nudge, never something worth a notification.
+# silent sets Discord's SUPPRESS_NOTIFICATIONS flag; allowed_mentions keeps the
+# mention rendering as a pill without pinging the person behind it.
+QUIET = {
+    "silent": True,
+    "allowed_mentions": discord.AllowedMentions.none(),
+}
 
 
 def warn_lead(seconds: int) -> int:
@@ -58,9 +66,16 @@ class ExtendView(discord.ui.View):
     @discord.ui.button(label="Extend 10m", style=discord.ButtonStyle.primary)
     async def extend(self, interaction: discord.Interaction, button: discord.ui.Button):
         ok, message = await self.cog.apply_extension(self.timer_id, EXTEND_SECONDS)
-        button.disabled = True
-        await interaction.response.edit_message(view=self)
-        await interaction.followup.send(message, ephemeral=not ok)
+        if ok:
+            # Edit the warning back into a plain confirmation instead of posting
+            # anything new. The next warning reuses this same message.
+            await interaction.response.edit_message(
+                content=None, embed=embed_success(message), view=None
+            )
+        else:
+            button.disabled = True
+            await interaction.response.edit_message(view=self)
+            await interaction.followup.send(message, ephemeral=True)
         self.stop()
 
 
@@ -127,7 +142,7 @@ class Timer(commands.Cog):
 
         # Check if target is in voice
         if not target.voice or not target.voice.channel:
-            await ctx.send(embed=embed_error(f"{target.mention} is not in a voice channel."))
+            await ctx.send(embed=embed_error(f"{target.mention} is not in a voice channel."), **QUIET)
             return
 
         # Permission, hierarchy, and bot-capability checks all happen up front so
@@ -175,13 +190,19 @@ class Timer(commands.Cog):
             warn_seconds=warn_lead(seconds)
         )
 
-        # Start timer task
+        # Post the confirmation and record it before the task starts, so the
+        # warning always has a message to edit rather than racing to find one.
+        confirmation = await ctx.send(
+            embed=embed_success(
+                f"{target.mention} will be disconnected in **{format_duration(seconds)}**."
+            ),
+            **QUIET
+        )
+        if confirmation:
+            await Database.set_timer_message(timer_id, confirmation.id)
+
         self.tasks[timer_id] = asyncio.create_task(self._run_timer(timer_id))
         log.info(f"Timer {timer_id} started for {target} ({seconds}s)")
-
-        await ctx.send(embed=embed_success(
-            f"{target.mention} will be disconnected in **{format_duration(seconds)}**."
-        ))
 
     @commands.hybrid_command(name="cancel", description="Cancel a disconnect timer")
     @app_commands.describe(member="User whose timer to cancel (leave empty for yourself)")
@@ -206,7 +227,7 @@ class Timer(commands.Cog):
         # Find timer
         timer = await Database.get_user_timer(ctx.guild.id, target.id)
         if not timer:
-            await ctx.send(embed=embed_error(f"No active timer for {target.mention}."))
+            await ctx.send(embed=embed_error(f"No active timer for {target.mention}."), **QUIET)
             return
 
         timer_id = str(timer["_id"])
@@ -218,7 +239,17 @@ class Timer(commands.Cog):
 
         # Update database
         await Database.cancel_timer(timer_id)
-        await ctx.send(embed=embed_success(f"Timer cancelled for {target.mention}."))
+
+        # Settle the timer's own message so it does not sit there showing a
+        # countdown and a live Extend button for a timer that is gone.
+        await self._edit_timer_message(
+            timer,
+            content=None,
+            embed=embed(f"Timer cancelled for {target.mention}."),
+            view=None
+        )
+
+        await ctx.send(embed=embed_success(f"Timer cancelled for {target.mention}."), **QUIET)
 
     @commands.hybrid_command(name="extend", description="Add time to a disconnect timer")
     @app_commands.describe(
@@ -256,11 +287,27 @@ class Timer(commands.Cog):
 
         timer = await Database.get_user_timer(ctx.guild.id, target.id)
         if not timer:
-            await ctx.send(embed=embed_error(f"No active timer for {target.mention}."))
+            await ctx.send(embed=embed_error(f"No active timer for {target.mention}."), **QUIET)
             return
 
-        ok, message = await self.apply_extension(str(timer["_id"]), seconds)
-        await ctx.send(embed=embed_success(message) if ok else embed_error(message))
+        timer_id = str(timer["_id"])
+        ok, message = await self.apply_extension(timer_id, seconds)
+
+        if ok:
+            # Keep the timer's own message showing the new expiry.
+            refreshed = await Database.get_timer(timer_id)
+            if refreshed:
+                await self._edit_timer_message(
+                    refreshed,
+                    content=None,
+                    embed=embed_success(message),
+                    view=None
+                )
+
+        await ctx.send(
+            embed=embed_success(message) if ok else embed_error(message),
+            **QUIET
+        )
 
     @commands.hybrid_command(name="timers", description="List active timers")
     @commands.cooldown(2, 20, commands.BucketType.guild)
@@ -395,8 +442,31 @@ class Timer(commands.Cog):
         await Database.mark_warned(timer_id)
         await self._send_warning(timer)
 
+    async def _edit_timer_message(self, timer: dict, **kwargs) -> bool:
+        """Update the message this timer already owns. True if it worked.
+
+        Editing is what keeps a timer to a single message and, unlike a new
+        message or a mention, never notifies anyone.
+        """
+        message_id = timer.get("message_id")
+        channel_id = timer.get("text_channel_id")
+        if not message_id or not channel_id:
+            return False
+
+        channel = self.bot.get_channel(channel_id)
+        if not isinstance(channel, discord.abc.Messageable):
+            return False
+
+        try:
+            message = await channel.fetch_message(message_id)
+            await message.edit(**kwargs)
+            return True
+        except discord.HTTPException as e:
+            log.warning(f"Timer {timer['_id']}: could not edit timer message - {e}")
+            return False
+
     async def _send_warning(self, timer: dict):
-        """Give the user a heads-up, in channel if possible and by DM if not.
+        """Give the user a heads-up by editing the timer message in place.
 
         A warning that cannot be delivered must never cancel the disconnect, so
         every failure here is logged and swallowed.
@@ -411,25 +481,23 @@ class Timer(commands.Cog):
         remaining = max(0, int(
             (aware(timer["expires_at"]) - datetime.now(timezone.utc)).total_seconds()
         ))
-        message = embed_info(
+        warning = embed_info(
             f"{member.mention} will be disconnected in "
             f"**{format_duration(remaining)}**.",
             title="Last Call"
         )
         view = ExtendView(self, str(timer["_id"]), member.id, timeout=max(remaining, 1))
 
-        channel = guild.get_channel(timer.get("text_channel_id") or 0)
+        if await self._edit_timer_message(timer, content=None, embed=warning, view=view):
+            return
+
+        # Only if the original message is gone. Still silent, still no ping.
+        channel = self.bot.get_channel(timer.get("text_channel_id") or 0)
         if isinstance(channel, discord.abc.Messageable):
             try:
-                await channel.send(content=member.mention, embed=message, view=view)
-                return
+                await channel.send(embed=warning, view=view, **QUIET)
             except discord.HTTPException as e:
-                log.warning(f"Timer {timer['_id']}: channel warning failed - {e}")
-
-        try:
-            await member.send(embed=message, view=view)
-        except discord.HTTPException as e:
-            log.warning(f"Timer {timer['_id']}: DM warning failed - {e}")
+                log.warning(f"Timer {timer['_id']}: warning failed - {e}")
 
     async def _execute_disconnect(self, timer: dict):
         """Disconnect the user from voice."""
@@ -466,6 +534,12 @@ class Timer(commands.Cog):
             await Database.end_session(guild.id, member.id, "bot_timer")
 
             await Database.complete_timer(timer_id, "disconnected")
+            await self._edit_timer_message(
+                timer,
+                content=None,
+                embed=embed(f"{member.mention} was disconnected."),
+                view=None
+            )
         except discord.Forbidden:
             log.error(f"Timer {timer_id}: No permission to disconnect")
             await Database.complete_timer(timer_id, "no_permission")

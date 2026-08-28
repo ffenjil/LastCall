@@ -168,14 +168,17 @@ class Database:
     ) -> str:
         """Add a disconnect timer.
 
-        `channel_id` is the voice channel; `text_channel_id` is where the warning
-        message should be sent (the channel the command was invoked in).
+        `channel_id` is the voice channel; `text_channel_id` is where the
+        confirmation was posted. `message_id` is filled in once that message
+        exists, so the whole timer can live in one message that gets edited
+        rather than posting a new one at every stage.
         """
         cls._check_connection()
         result = await cls.timers.insert_one({  # type: ignore
             "guild_id": guild_id,
             "channel_id": channel_id,
             "text_channel_id": text_channel_id,
+            "message_id": None,
             "user_id": user_id,
             "set_by": set_by,
             "expires_at": expires_at,
@@ -186,6 +189,18 @@ class Database:
             "status": "active"
         })
         return str(result.inserted_id)
+
+    @classmethod
+    async def set_timer_message(cls, timer_id: str, message_id: int):
+        """Remember which message to edit as the timer progresses."""
+        cls._check_connection()
+        object_id = cls._parse_object_id(timer_id)
+        if object_id is None:
+            return
+        await cls.timers.update_one(  # type: ignore
+            {"_id": object_id},
+            {"$set": {"message_id": message_id}}
+        )
 
     @classmethod
     async def get_timer(cls, timer_id: str) -> Optional[dict]:
