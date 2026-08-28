@@ -5,6 +5,7 @@ Open source Discord bot for voice channel timers and activity tracking, by Team 
 ## Features
 
 - Set disconnect timers for users in voice channels
+- A warning before the disconnect, with a button to extend
 - Track voice channel activity (join/leave/duration)
 - View user stats and guild leaderboards
 - Custom prefix per guild
@@ -14,12 +15,16 @@ Open source Discord bot for voice channel timers and activity tracking, by Team 
 
 | Command | Description |
 |---------|-------------|
-| `dc @user 5m` | Set disconnect timer |
+| `dc 5m @user` | Set disconnect timer |
+| `extend 10m` | Add time to a timer |
 | `cancel` | Cancel a timer |
 | `timers` | List active timers |
 | `prefix !` | Set guild prefix |
 | `stats` | View VC stats |
 | `top` | Guild leaderboard |
+
+Anyone can set a timer on themselves. `Move Members` is required to set one on
+someone else, and you cannot target anyone at or above your own top role.
 
 ## Setup
 
@@ -31,8 +36,15 @@ Open source Discord bot for voice channel timers and activity tracking, by Team 
    ```
 4. Run the bot:
    ```bash
-   python run.py
+   python main.py
    ```
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
 
 ## Requirements
 
@@ -42,3 +54,9 @@ Open source Discord bot for voice channel timers and activity tracking, by Team 
   - Message Content
   - Server Members
   - Voice States
+
+## Notes
+
+Slash commands sync automatically whenever the command set changes, so restarts
+do not burn through the global sync rate limit. Set `SYNC_ON_START=1` to force
+one, or use the owner-only `push` command.

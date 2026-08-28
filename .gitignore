@@ -28,9 +28,8 @@ logs/
 .DS_Store
 Thumbs.db
 
-# Test files
-test_*.py
-run.py
+# Local scratch
+scratch_*.py
 
 # Images
 *.png
