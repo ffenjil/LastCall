@@ -5,8 +5,12 @@ the timer and tracker cogs and the database layer.
 """
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
+
+# A continuous voice session longer than this always means tracking was lost
+# rather than that somebody really sat there, so reconciliation caps at it.
+MAX_RECONCILED_SESSION = 86400  # 24 hours
 
 # Maps every accepted unit spelling to its multiplier in seconds.
 UNIT_MAP = {
@@ -38,6 +42,25 @@ def compute_duration(joined_at: datetime, end_time: Optional[datetime] = None) -
     """
     end = aware(end_time) if end_time is not None else datetime.now(timezone.utc)
     return max(0, int((end - aware(joined_at)).total_seconds()))
+
+
+def settle_time(
+    joined_at: datetime,
+    cutoff: Optional[datetime] = None,
+    max_seconds: int = MAX_RECONCILED_SESSION
+) -> datetime:
+    """When a session that outlived the bot should be recorded as ending.
+
+    Prefers the last heartbeat, which is when the bot was last known to be
+    running. Falls back to a capped ceiling when there is no heartbeat, or when
+    the heartbeat is so far past the join that the session is implausible, so a
+    migration onto this code cannot credit somebody weeks of voice time.
+    """
+    joined = aware(joined_at)
+    ceiling = joined + timedelta(seconds=max_seconds)
+    if cutoff is None:
+        return ceiling
+    return min(aware(cutoff), ceiling)
 
 
 def parse_duration(duration_str: str) -> Optional[int]:

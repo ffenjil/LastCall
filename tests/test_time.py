@@ -2,7 +2,15 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from bot.utils.time import UNIT_MAP, aware, compute_duration, format_duration, parse_duration
+from bot.utils.time import (
+    MAX_RECONCILED_SESSION,
+    UNIT_MAP,
+    aware,
+    compute_duration,
+    format_duration,
+    parse_duration,
+    settle_time,
+)
 
 
 class TestParseDuration:
@@ -114,3 +122,38 @@ class TestComputeDuration:
         joined = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
         heartbeat = datetime(2026, 1, 1, 12, 5, 0, tzinfo=timezone.utc)
         assert compute_duration(joined, heartbeat) == 300
+
+
+class TestSettleTime:
+    JOINED = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    def test_uses_the_heartbeat_when_there_is_one(self):
+        heartbeat = self.JOINED + timedelta(hours=2)
+        assert settle_time(self.JOINED, heartbeat) == heartbeat
+
+    def test_caps_when_there_is_no_heartbeat(self):
+        # The real migration case: no heartbeat existed, and without a cap these
+        # sessions were credited 32 days each.
+        settled = settle_time(self.JOINED, None)
+        assert settled == self.JOINED + timedelta(seconds=MAX_RECONCILED_SESSION)
+        assert compute_duration(self.JOINED, settled) == MAX_RECONCILED_SESSION
+
+    def test_caps_an_implausibly_distant_heartbeat(self):
+        heartbeat = self.JOINED + timedelta(days=32)
+        settled = settle_time(self.JOINED, heartbeat)
+        assert settled == self.JOINED + timedelta(seconds=MAX_RECONCILED_SESSION)
+
+    def test_heartbeat_before_join_yields_no_time(self):
+        # A session that started after the last heartbeat gets nothing, since
+        # compute_duration clamps at zero.
+        heartbeat = self.JOINED - timedelta(hours=1)
+        assert compute_duration(self.JOINED, settle_time(self.JOINED, heartbeat)) == 0
+
+    def test_naive_inputs(self):
+        joined = self.JOINED.replace(tzinfo=None)
+        heartbeat = (self.JOINED + timedelta(minutes=30)).replace(tzinfo=None)
+        assert compute_duration(joined, settle_time(joined, heartbeat)) == 1800
+
+    def test_custom_cap(self):
+        settled = settle_time(self.JOINED, None, max_seconds=3600)
+        assert compute_duration(self.JOINED, settled) == 3600

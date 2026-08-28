@@ -9,7 +9,7 @@ from discord.ext import commands, tasks
 from bot.db import Database
 from bot.utils.embed import make as embed
 from bot.utils.embed import error as embed_error
-from bot.utils.time import format_duration
+from bot.utils.time import format_duration, settle_time
 
 if TYPE_CHECKING:
     from bot.core import LastCall
@@ -82,10 +82,13 @@ class Tracker(commands.Cog):
         # 3. For any session in DB that is NOT actually active, end it
         actual_keys = {(g_id, u_id) for g_id, u_id, _, _ in actual_active}
         ended_count = 0
-        for guild_id, user_id in db_active_map:
+        for (guild_id, user_id), session in db_active_map.items():
             if (guild_id, user_id) not in actual_keys:
                 await Database.end_session(
-                    guild_id, user_id, "offline_disconnect", end_time=cutoff
+                    guild_id,
+                    user_id,
+                    "offline_disconnect",
+                    end_time=settle_time(session["joined_at"], cutoff)
                 )
                 ended_count += 1
 
@@ -98,8 +101,12 @@ class Tracker(commands.Cog):
                 await Database.start_session(guild_id, user_id, channel_id, channel_name)
                 started_count += 1
             elif long_outage:
+                prior = db_active_map[(guild_id, user_id)]
                 await Database.end_session(
-                    guild_id, user_id, "offline_gap", end_time=cutoff
+                    guild_id,
+                    user_id,
+                    "offline_gap",
+                    end_time=settle_time(prior["joined_at"], cutoff)
                 )
                 await Database.start_session(guild_id, user_id, channel_id, channel_name)
                 resumed_count += 1
