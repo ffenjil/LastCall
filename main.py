@@ -11,6 +11,8 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
+log = logging.getLogger(__name__)
+
 load_dotenv()
 
 from bot.core import LastCall
@@ -21,7 +23,7 @@ async def main():
     # Get token
     token = os.getenv("DISCORD_TOKEN")
     if not token:
-        print("Error: DISCORD_TOKEN not found in .env")
+        log.error("DISCORD_TOKEN not found in .env")
         sys.exit(1)
 
     # Connect to MongoDB
@@ -30,27 +32,27 @@ async def main():
 
     try:
         await Database.connect(mongo_uri, mongo_db)
-    except Exception as e:
-        print(f"Error connecting to MongoDB: {e}")
+    except Exception:
+        log.exception("Error connecting to MongoDB")
         sys.exit(1)
 
     # Start bot
     bot = LastCall()
 
     try:
-        print("Starting bot...")
+        log.info("Starting bot...")
         await bot.start(token)
     except KeyboardInterrupt:
         pass
     except asyncio.CancelledError:
         pass
-    except Exception as e:
-        print(f"Error: {e}")
+    except Exception:
+        log.exception("Bot stopped with an error")
     finally:
-        print("Shutting down...")
-        await Database.close()
+        log.info("Shutting down...")
         if not bot.is_closed():
             await bot.close()
+        await Database.close()
 
 
 if __name__ == "__main__":
