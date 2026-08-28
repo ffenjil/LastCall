@@ -23,6 +23,7 @@ class Database:
     sessions: Optional[AsyncIOMotorCollection] = None
     active: Optional[AsyncIOMotorCollection] = None
     state: Optional[AsyncIOMotorCollection] = None
+    events: Optional[AsyncIOMotorCollection] = None
 
     @classmethod
     async def connect(cls, uri: str, db_name: str):
@@ -36,6 +37,7 @@ class Database:
         cls.sessions = cls.db["sessions"]
         cls.active = cls.db["active"]
         cls.state = cls.db["state"]
+        cls.events = cls.db["events"]
 
         # Verify connection
         await cls.client.admin.command("ping")
@@ -55,6 +57,24 @@ class Database:
         await cls.sessions.create_index("guild_id")  # type: ignore
         await cls.sessions.create_index([("guild_id", 1), ("user_id", 1)])  # type: ignore
         await cls.active.create_index([("guild_id", 1), ("user_id", 1)], unique=True)  # type: ignore
+
+        # Events are written far more often than they are read, and are always
+        # read as "this kind of thing, most recent first" or scoped to a guild
+        # or user, so index for those three shapes.
+        await cls.events.create_index([("type", 1), ("at", -1)])  # type: ignore
+        await cls.events.create_index([("guild_id", 1), ("at", -1)])  # type: ignore
+        await cls.events.create_index([("user_id", 1), ("at", -1)])  # type: ignore
+        await cls.events.create_index([("at", -1)])  # type: ignore
+
+        # Retention is opt-in. Unset means keep everything, which at roughly
+        # 200 bytes an event is affordable for years on a 512MB tier.
+        retention_days = os.getenv("EVENT_RETENTION_DAYS", "").strip()
+        if retention_days.isdigit() and int(retention_days) > 0:
+            await cls.events.create_index(  # type: ignore
+                "at", expireAfterSeconds=int(retention_days) * 86400
+            )
+            log.info(f"Event retention: {retention_days} days")
+
         log.info("Database indexes created")
 
     @classmethod
@@ -69,7 +89,7 @@ class Database:
         """Ensure database is connected."""
         if (
             cls.guilds is None or cls.timers is None or cls.sessions is None
-            or cls.active is None or cls.state is None
+            or cls.active is None or cls.state is None or cls.events is None
         ):
             raise RuntimeError("Database not connected")
 
@@ -122,6 +142,35 @@ class Database:
             {"$set": {key: value}},
             upsert=True
         )
+
+    # ============ Events ============
+
+    @classmethod
+    async def log_event(
+        cls,
+        event_type: str,
+        guild_id: Optional[int] = None,
+        user_id: Optional[int] = None,
+        **data: Any
+    ):
+        """Record something that happened, for later analysis.
+
+        Observability must never be able to break the thing it observes, so a
+        failure here is logged and swallowed rather than raised. `event_type` is
+        a dotted name like "command.ok" or "guild.join"; everything specific to
+        the event goes in data.
+        """
+        try:
+            cls._check_connection()
+            await cls.events.insert_one({  # type: ignore
+                "type": event_type,
+                "at": datetime.now(timezone.utc),
+                "guild_id": guild_id,
+                "user_id": user_id,
+                "data": data,
+            })
+        except Exception:
+            log.warning(f"Could not record event {event_type}", exc_info=True)
 
     # ============ Guild Settings ============
 

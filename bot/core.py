@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import os
+import traceback
 from typing import Optional
 
 import discord
@@ -18,6 +19,7 @@ COGS = [
     "bot.cogs.config",
     "bot.cogs.help",
     "bot.cogs.owner",
+    "bot.cogs.analytics",
 ]
 
 
@@ -122,6 +124,23 @@ class LastCall(commands.Bot):
             )
         )
 
+    @staticmethod
+    def _traceback(error: BaseException, limit: int = 4000) -> str:
+        """Formatted traceback, trimmed to something a document can hold."""
+        text = "".join(
+            traceback.format_exception(type(error), error, error.__traceback__)
+        )
+        return text[-limit:]
+
+    async def close(self):
+        """Record a clean shutdown before going away.
+
+        A downtime window with a bot.shutdown at the start was deliberate; one
+        without means the process died, which is worth being able to tell apart.
+        """
+        await Database.log_event("bot.shutdown", guild_count=len(self.guilds))
+        await super().close()
+
     def _error_message(
         self,
         error: Exception,
@@ -170,6 +189,17 @@ class LastCall(commands.Bot):
         message = self._error_message(error, ctx)
         if message is None:
             log.error(f"Unhandled error in command {ctx.command}", exc_info=error)
+            # journald rotates; keep unhandled failures somewhere durable.
+            await Database.log_event(
+                "error.unhandled",
+                guild_id=ctx.guild.id if ctx.guild else None,
+                user_id=ctx.author.id,
+                source="prefix_command",
+                command=ctx.command.qualified_name if ctx.command else None,
+                error_type=type(error).__name__,
+                message=str(error)[:500],
+                traceback=self._traceback(error),
+            )
             message = "Something went wrong."
 
         try:
@@ -187,12 +217,25 @@ class LastCall(commands.Bot):
         Without this, a failing slash command shows the user nothing but
         "The application did not respond".
         """
+        command = interaction.command.qualified_name if interaction.command else None
         message = self._error_message(error)
+
+        # No cog listener fires for tree errors, so both the recording of the
+        # failure and the durable copy of it have to happen here.
+        await Database.log_event(
+            "command.error" if message else "error.unhandled",
+            guild_id=interaction.guild_id,
+            user_id=interaction.user.id,
+            source="app_command",
+            command=command,
+            kind="slash",
+            error_type=type(error).__name__,
+            message=str(error)[:500],
+            traceback=None if message else self._traceback(error),
+        )
+
         if message is None:
-            log.error(
-                f"Unhandled error in app command {interaction.command}",
-                exc_info=error
-            )
+            log.error(f"Unhandled error in app command {command}", exc_info=error)
             message = "Something went wrong."
 
         embed = embed_error(message)
